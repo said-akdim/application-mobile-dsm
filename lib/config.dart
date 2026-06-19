@@ -1,7 +1,7 @@
 class AppConfig {
   // URL du serveur Odoo — en production remplacer par https://votre-domaine.ma
   static const String baseUrl =
-      String.fromEnvironment('ODOO_URL', defaultValue: 'http://localhost:8169');
+      String.fromEnvironment('ODOO_URL', defaultValue: 'http://localhost:9069');
 
   // Nom de la base de données Odoo
   static const String dbName =
