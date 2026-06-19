@@ -1,0 +1,28 @@
+name: application_dsm_v1
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  webview_flutter: ^4.8.0 # Pour afficher la page du CMI
+  cupertino_icons: ^1.0.8
+  http: ^1.2.0            # Pour appeler l'API d'Odoo
+  provider: ^6.1.2
+  url_launcher: ^6.2.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+  - assets/images/
