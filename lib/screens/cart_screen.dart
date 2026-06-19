@@ -228,8 +228,10 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
         },
         onNavigationRequest: (req) {
           final host = Uri.parse(req.url).host;
-          // Autoriser : serveur Odoo + passerelle CMI
-          if (host == baseHost || _allowedHosts.any((h) => host.endsWith(h))) {
+          // Autoriser : serveur Odoo (baseHost + localhost) + passerelle CMI
+          if (host == baseHost ||
+              host == 'localhost' ||
+              _allowedHosts.any((h) => host.endsWith(h))) {
             return NavigationDecision.navigate;
           }
           return NavigationDecision.prevent;

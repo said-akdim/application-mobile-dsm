@@ -157,7 +157,10 @@ class ApiService {
 
   Future<String> getPaymentLink(int orderId) async {
     final data = await _call('/api/order/payment_link', {'order_id': orderId});
-    return (data as Map)['url'] as String;
+    String url = (data as Map)['url'] as String;
+    // Sur émulateur Android, localhost Odoo → 10.0.2.2
+    url = url.replaceFirst('http://localhost:', 'http://${Uri.parse(AppConfig.baseUrl).host}:');
+    return url;
   }
 
   Future<List<OrderSummary>> getOrders() async {
