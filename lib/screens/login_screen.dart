@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme.dart';
 import '../services/api_service.dart';
-import 'main_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -53,9 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.remove('saved_login');
       }
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
+      // Si cet écran est sur la pile de navigation, on revient simplement en arrière.
+      // Sinon (premier démarrage), ApiService.isLoggedIn=true → _AppRoot rebâtit déjà.
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } finally {

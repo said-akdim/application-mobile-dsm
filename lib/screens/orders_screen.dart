@@ -5,6 +5,7 @@ import '../config.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../state/tab_notifier.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -13,16 +14,22 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  late Future<List<OrderSummary>> _future;
+  Future<List<OrderSummary>>? _future;
 
   @override
-  void initState() {
-    super.initState();
-    _future = context.read<ApiService>().getOrders();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final api = context.read<ApiService>();
+    if (api.isLoggedIn && _future == null) {
+      _future = api.getOrders();
+    }
   }
 
-  void _reload() =>
-      setState(() => _future = context.read<ApiService>().getOrders());
+  void _reload() {
+    setState(() {
+      _future = context.read<ApiService>().getOrders();
+    });
+  }
 
   String _label(String s) {
     switch (s) {
@@ -55,6 +62,47 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final api = context.watch<ApiService>();
+
+    if (!api.isLoggedIn) {
+      return SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.receipt_long_rounded,
+                    size: 64, color: AppColors.textMuted),
+                const SizedBox(height: 20),
+                const Text(
+                  'Connectez-vous pour voir vos commandes',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Votre historique de commandes sera disponible après connexion.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 28),
+                FilledButton.icon(
+                  onPressed: () => context.read<TabNotifier>().goTo(4),
+                  icon: const Icon(Icons.login_rounded),
+                  label: const Text('Se connecter'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Si on vient de se connecter, charger les commandes
+    _future ??= api.getOrders();
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -65,8 +113,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Mes commandes',
-                    style:
-                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        fontSize: 24, fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded),
                   onPressed: _reload,
@@ -84,18 +132,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   if (snap.hasError) {
                     return Center(
                         child: Text('Erreur : ${snap.error}',
-                            style:
-                                const TextStyle(color: AppColors.textMuted)));
+                            style: const TextStyle(
+                                color: AppColors.textMuted)));
                   }
                   final orders = snap.data ?? [];
                   if (orders.isEmpty) {
                     return const Center(
                         child: Text('Aucune commande.',
-                            style: TextStyle(color: AppColors.textMuted)));
+                            style:
+                                TextStyle(color: AppColors.textMuted)));
                   }
                   return ListView.separated(
                     itemCount: orders.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final o = orders[i];
                       return Container(
@@ -108,7 +158,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           children: [
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   Text(o.name,
                                       style: const TextStyle(
@@ -119,8 +170,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: _color(o.state).withOpacity(0.18),
-                                      borderRadius: BorderRadius.circular(8),
+                                      color: _color(o.state)
+                                          .withValues(alpha: 0.18),
+                                      borderRadius:
+                                          BorderRadius.circular(8),
                                     ),
                                     child: Text(_label(o.state),
                                         style: TextStyle(

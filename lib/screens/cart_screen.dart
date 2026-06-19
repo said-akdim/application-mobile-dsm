@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../config.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../state/cart.dart';
 import '../widgets/product_cover.dart';
-import 'login_screen.dart';
+import '../state/tab_notifier.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -23,6 +24,15 @@ class _CartScreenState extends State<CartScreen> {
     final cart = context.read<Cart>();
     final api = context.read<ApiService>();
     if (cart.isEmpty) return;
+
+    if (!api.isLoggedIn) {
+      context.read<TabNotifier>().goTo(4);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Connectez-vous pour valider votre commande.')),
+      );
+      return;
+    }
     setState(() => _sending = true);
     try {
       final order = await api.createOrder(
@@ -35,7 +45,7 @@ class _CartScreenState extends State<CartScreen> {
         cart.clear();
         if (!mounted) return;
         final sessionId = api.sessionId;
-        await Navigator.of(context).push(
+        final result = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
             builder: (_) => _PaymentWebScreen(
               url: url,
@@ -44,6 +54,14 @@ class _CartScreenState extends State<CartScreen> {
             ),
           ),
         );
+        if (!mounted) return;
+        if (result == true) {
+          _showResult('Paiement réussi',
+              'Commande ${order.name} payée avec succès.\nTotal : ${AppFormat.money(order.amountTotal)}');
+        } else if (result == false) {
+          _showResult('Paiement annulé',
+              'Le paiement pour la commande ${order.name} a été annulé ou refusé.');
+        }
       } else {
         cart.clear();
         if (!mounted) return;
@@ -66,12 +84,10 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _redirectToLogin() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    context.read<TabNotifier>().goTo(4);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Session expirée. Veuillez vous reconnecter.')),
+      const SnackBar(
+          content: Text('Session expirée. Veuillez vous reconnecter.')),
     );
   }
 
@@ -223,6 +239,7 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
     final baseHost = Uri.parse(AppConfig.baseUrl).host;
     _ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (url) {
@@ -239,13 +256,29 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
           }
           return NavigationDecision.prevent;
         },
-      ))
-      ..loadRequest(
-        Uri.parse(widget.url),
-        headers: widget.sessionId.isNotEmpty
-            ? {'Cookie': 'session_id=${widget.sessionId}'}
-            : {},
-      );
+      ));
+
+    // Autoriser mixed content HTTPS→HTTP (okUrl/failUrl CMI en dev HTTP)
+    if (_ctrl.platform is AndroidWebViewController) {
+      (_ctrl.platform as AndroidWebViewController)
+          .setMixedContentMode(MixedContentMode.alwaysAllow);
+    }
+
+    _loadWithCookie();
+  }
+
+  Future<void> _loadWithCookie() async {
+    if (widget.sessionId.isNotEmpty) {
+      final cookieManager = WebViewCookieManager();
+      final uri = Uri.parse(widget.url);
+      await cookieManager.setCookie(WebViewCookie(
+        name: 'session_id',
+        value: widget.sessionId,
+        domain: uri.host,
+        path: '/',
+      ));
+    }
+    await _ctrl.loadRequest(Uri.parse(widget.url));
   }
 
   void _handleReturn(String url) {

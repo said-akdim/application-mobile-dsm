@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/models.dart';
 
@@ -11,18 +13,26 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-class ApiService {
+class ApiService extends ChangeNotifier {
   String? _sessionId;
   String? _userName;
-  bool get isLoggedIn => _sessionId != null;
+  bool _isAuthenticated = false;
+
+  bool get isLoggedIn => _isAuthenticated;
   String get userName => _userName ?? '';
   String get sessionId => _sessionId ?? '';
+
+  static const _kSessionId = 'dsm_session_id';
+  static const _kUserName = 'dsm_user_name';
 
   Map<String, String> get _headers {
     final h = {'Content-Type': 'application/json'};
     if (_sessionId != null) h['Cookie'] = 'session_id=$_sessionId';
     return h;
   }
+
+  Map<String, String> get imageHeaders =>
+      _sessionId != null ? {'Cookie': 'session_id=$_sessionId'} : {};
 
   Future<dynamic> _call(String path, Map<String, dynamic> params) async {
     final uri = Uri.parse('${AppConfig.baseUrl}$path');
@@ -38,12 +48,14 @@ class ApiService {
           .post(uri, headers: _headers, body: body)
           .timeout(const Duration(seconds: AppConfig.networkTimeout));
     } on Exception {
-      throw ApiException('Impossible de joindre le serveur. Vérifiez votre connexion.');
+      throw ApiException(
+          'Impossible de joindre le serveur. Vérifiez votre connexion.');
     }
 
     if (res.statusCode == 401) {
-      _sessionId = null;
-      throw ApiException('Session expirée. Veuillez vous reconnecter.', isAuthError: true);
+      _clearAuth();
+      throw ApiException('Session expirée. Veuillez vous reconnecter.',
+          isAuthError: true);
     }
     if (res.statusCode != 200) {
       throw ApiException('Erreur réseau. Veuillez réessayer.');
@@ -61,13 +73,13 @@ class ApiService {
       if (err is Map) {
         final code = err['code'];
         final data = err['data'];
-        // Session invalide dans Odoo (code 100 ou type session_expired)
         if (code == 100 ||
-            (data is Map && data['name']?.toString().contains('session') == true)) {
-          _sessionId = null;
-          throw ApiException('Session expirée. Veuillez vous reconnecter.', isAuthError: true);
+            (data is Map &&
+                data['name']?.toString().contains('session') == true)) {
+          _clearAuth();
+          throw ApiException('Session expirée. Veuillez vous reconnecter.',
+              isAuthError: true);
         }
-        // Message d'erreur filtré : ne pas exposer les détails internes Odoo
         final userMsg = _sanitizeError(data);
         throw ApiException(userMsg);
       }
@@ -76,18 +88,28 @@ class ApiService {
     return decoded['result'];
   }
 
+  void _clearAuth() {
+    _isAuthenticated = false;
+    _sessionId = null;
+    _userName = null;
+    _deleteSavedSession();
+    notifyListeners();
+  }
+
   String _sanitizeError(dynamic data) {
     if (data is! Map) return 'Une erreur est survenue. Veuillez réessayer.';
     final msg = data['message']?.toString() ?? '';
-    // Messages métier lisibles — on les transmet
-    if (msg.contains('Stock') || msg.contains('stock') ||
-        msg.contains('disponible') || msg.contains('introuvable') ||
+    if (msg.contains('Stock') ||
+        msg.contains('stock') ||
+        msg.contains('disponible') ||
+        msg.contains('introuvable') ||
         msg.contains('Identifiants')) {
       return msg;
     }
-    // Tout le reste (erreurs techniques Odoo) → message générique
     return 'Une erreur est survenue. Veuillez réessayer.';
   }
+
+  // ── Authentification ──────────────────────────────────────────────────────
 
   Future<void> login(String login, String password) async {
     final result = await _call('/web/session/authenticate', {
@@ -99,15 +121,50 @@ class ApiService {
       throw ApiException('Identifiants invalides.');
     }
     _userName = (result['name'] ?? result['username'] ?? login).toString();
+    _isAuthenticated = true;
+    await _saveSession();
+    notifyListeners();
   }
 
   void logout() {
-    _sessionId = null;
-    _userName = null;
+    _clearAuth();
   }
 
-  Map<String, String> get imageHeaders =>
-      _sessionId != null ? {'Cookie': 'session_id=$_sessionId'} : {};
+  // Tente de restaurer la session sauvegardée. Retourne true si réussi.
+  Future<bool> restoreSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final sid = prefs.getString(_kSessionId);
+    final name = prefs.getString(_kUserName);
+    if (sid == null || sid.isEmpty) return false;
+    _sessionId = sid;
+    _userName = name;
+    try {
+      await _call('/api/order/list', {});
+      _isAuthenticated = true;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      _sessionId = null;
+      _userName = null;
+      await _deleteSavedSession();
+      return false;
+    }
+  }
+
+  Future<void> _saveSession() async {
+    if (_sessionId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSessionId, _sessionId!);
+    await prefs.setString(_kUserName, _userName ?? '');
+  }
+
+  Future<void> _deleteSavedSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kSessionId);
+    await prefs.remove(_kUserName);
+  }
+
+  // ── Catalogue public (sans connexion) ────────────────────────────────────
 
   Future<List<City>> getCities() async {
     final data = await _call('/api/cities', {});
@@ -144,8 +201,9 @@ class ApiService {
     return (data as List).map((e) => Product.fromJson(e)).toList();
   }
 
-  Future<OrderSummary> createOrder(
-      List<Map<String, dynamic>> lines,
+  // ── Commandes (connexion requise) ─────────────────────────────────────────
+
+  Future<OrderSummary> createOrder(List<Map<String, dynamic>> lines,
       {String paymentMethod = 'cod', String? note}) async {
     if (lines.isEmpty) throw ApiException('Le panier est vide.');
     final data = await _call('/api/order/create', {
@@ -159,8 +217,8 @@ class ApiService {
   Future<String> getPaymentLink(int orderId) async {
     final data = await _call('/api/order/payment_link', {'order_id': orderId});
     String url = (data as Map)['url'] as String;
-    // Sur émulateur Android, localhost Odoo → 10.0.2.2
-    url = url.replaceFirst('http://localhost:', 'http://${Uri.parse(AppConfig.baseUrl).host}:');
+    url = url.replaceFirst('http://localhost:',
+        'http://${Uri.parse(AppConfig.baseUrl).host}:');
     return url;
   }
 

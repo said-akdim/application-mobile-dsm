@@ -3,23 +3,18 @@ import 'package:provider/provider.dart';
 
 import '../theme.dart';
 import '../state/cart.dart';
+import '../state/tab_notifier.dart';
 import 'home_screen.dart';
 import 'products_screen.dart';
 import 'cart_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
 
-class MainShell extends StatefulWidget {
+class MainShell extends StatelessWidget {
   const MainShell({super.key});
-  @override
-  State<MainShell> createState() => _MainShellState();
-}
 
-class _MainShellState extends State<MainShell> {
-  int _index = 0;
-
-  // 0 Accueil · 1 Commandes · 2 Catalogue (centre) · 3 Panier · 4 Profil
-  final _pages = const [
+  // 0 Accueil · 1 Commandes · 2 Catalogue · 3 Panier · 4 Profil
+  static const _pages = [
     HomeScreen(),
     OrdersScreen(),
     ProductsScreen(),
@@ -29,11 +24,12 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final tab = context.watch<TabNotifier>();
     return Scaffold(
-      body: IndexedStack(index: _index, children: _pages),
+      body: IndexedStack(index: tab.index, children: _pages),
       bottomNavigationBar: _BottomBar(
-        index: _index,
-        onTap: (i) => setState(() => _index = i),
+        index: tab.index,
+        onTap: (i) => context.read<TabNotifier>().goTo(i),
       ),
     );
   }
@@ -63,7 +59,8 @@ class _BottomBar extends StatelessWidget {
               _item(Icons.home_rounded, 'Accueil', 0),
               _item(Icons.receipt_long_rounded, 'Commandes', 1),
               _center(context),
-              _item(Icons.shopping_cart_rounded, 'Panier', 3, badge: cartCount),
+              _item(Icons.shopping_cart_rounded, 'Panier', 3,
+                  badge: cartCount),
               _item(Icons.person_rounded, 'Profil', 4),
             ],
           ),
@@ -130,13 +127,14 @@ class _BottomBar extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: (active ? AppColors.accent : AppColors.accent2)
-                  .withOpacity(0.4),
+                  .withValues(alpha: 0.4),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: const Icon(Icons.search_rounded, color: Colors.white, size: 26),
+        child:
+            const Icon(Icons.search_rounded, color: Colors.white, size: 26),
       ),
     );
   }
