@@ -16,6 +16,7 @@ class ApiService {
   String? _userName;
   bool get isLoggedIn => _sessionId != null;
   String get userName => _userName ?? '';
+  String get sessionId => _sessionId ?? '';
 
   Map<String, String> get _headers {
     final h = {'Content-Type': 'application/json'};

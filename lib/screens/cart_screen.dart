@@ -34,11 +34,13 @@ class _CartScreenState extends State<CartScreen> {
         final url = await api.getPaymentLink(order.orderId);
         cart.clear();
         if (!mounted) return;
+        final sessionId = api.sessionId;
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => _PaymentWebScreen(
               url: url,
               orderName: order.name,
+              sessionId: sessionId,
             ),
           ),
         );
@@ -199,7 +201,8 @@ class _CartScreenState extends State<CartScreen> {
 class _PaymentWebScreen extends StatefulWidget {
   final String url;
   final String orderName;
-  const _PaymentWebScreen({required this.url, required this.orderName});
+  final String sessionId;
+  const _PaymentWebScreen({required this.url, required this.orderName, required this.sessionId});
 
   @override
   State<_PaymentWebScreen> createState() => _PaymentWebScreenState();
@@ -237,7 +240,12 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
           return NavigationDecision.prevent;
         },
       ))
-      ..loadRequest(Uri.parse(widget.url));
+      ..loadRequest(
+        Uri.parse(widget.url),
+        headers: widget.sessionId.isNotEmpty
+            ? {'Cookie': 'session_id=${widget.sessionId}'}
+            : {},
+      );
   }
 
   void _handleReturn(String url) {
