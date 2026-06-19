@@ -16,5 +16,5 @@ class AppFormat {
   static String money(num v) => '${v.toStringAsFixed(2)} $currency';
 
   static String productImage(int productId, {int size = 256}) =>
-      '${AppConfig.baseUrl}/web/image/product.product/$productId/image_$size';
+      '${AppConfig.baseUrl}/api/image/product/$productId?size=$size';
 }
