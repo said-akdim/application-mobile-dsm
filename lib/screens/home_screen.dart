@@ -25,12 +25,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _products = context.read<ApiService>().getProducts(limit: 12);
   }
 
+  Future<void> _refresh() async {
+    setState(() {
+      _products = context.read<ApiService>().getProducts(limit: 12);
+    });
+    await _products;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final name = context.read<ApiService>().userName;
-    final firstName = name.split(' ').first;
+    final name = context.watch<ApiService>().userName;
+    final firstName = name.isNotEmpty ? name.split(' ').first : '';
     return SafeArea(
-      child: ListView(
+      child: RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
           _Header(name: firstName),
@@ -59,8 +68,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
                 if (snap.hasError) {
                   return Center(
-                      child: Text('Erreur : ${snap.error}',
-                          style: const TextStyle(color: AppColors.textMuted)));
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.wifi_off_rounded,
+                            color: AppColors.textMuted, size: 36),
+                        const SizedBox(height: 8),
+                        const Text('Impossible de charger les produits.',
+                            style: TextStyle(color: AppColors.textMuted)),
+                        TextButton(
+                          onPressed: _refresh,
+                          child: const Text('Réessayer'),
+                        ),
+                      ],
+                    ),
+                  );
                 }
                 final items = snap.data ?? [];
                 if (items.isEmpty) {
@@ -84,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
                 '© Librairie DSM ${DateTime.now().year}',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF6B7280),
                 ),
@@ -92,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
