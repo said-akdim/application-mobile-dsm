@@ -5,6 +5,7 @@ import '../config.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import 'city_screen.dart';
 import 'product_detail_screen.dart';
 import 'products_screen.dart';
@@ -22,12 +23,19 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _products = context.read<ApiService>().getProducts(limit: 12);
+    _products = _loadProducts();
+  }
+
+  Future<List<Product>> _loadProducts() async {
+    final products =
+        await context.read<ApiService>().getProducts(limit: 12);
+    NotificationService.checkAndNotifyNewProducts(products);
+    return products;
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _products = context.read<ApiService>().getProducts(limit: 12);
+      _products = _loadProducts();
     });
     await _products;
   }

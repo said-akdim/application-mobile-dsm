@@ -16,7 +16,9 @@ dependencies:
   http: ^1.2.0
   provider: ^6.1.2
   url_launcher: ^6.2.6
-  shared_preferences: ^2.3.2   # Persistance légère (identifiant "se souvenir de moi")
+  shared_preferences: ^2.3.2
+  cached_network_image: ^3.4.1
+  flutter_local_notifications: ^18.0.0
 
 dev_dependencies:
   flutter_test:
