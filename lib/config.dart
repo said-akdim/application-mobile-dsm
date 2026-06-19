@@ -5,7 +5,7 @@ class AppConfig {
 
   // Nom de la base de données Odoo
   static const String dbName =
-      String.fromEnvironment('ODOO_DB', defaultValue: 'agora-dev');
+      String.fromEnvironment('ODOO_DB', defaultValue: 'agora');
 
   // Timeout réseau (secondes)
   static const int networkTimeout = 15;
