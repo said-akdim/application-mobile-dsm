@@ -228,15 +228,9 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
   late final WebViewController _ctrl;
   bool _loading = true;
 
-  static const _allowedHosts = [
-    'cmi.co.ma',
-    'paiement.cmi.co.ma',
-  ];
-
   @override
   void initState() {
     super.initState();
-    final baseHost = Uri.parse(AppConfig.baseUrl).host;
     _ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -246,16 +240,7 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
           setState(() => _loading = false);
           _handleReturn(url);
         },
-        onNavigationRequest: (req) {
-          final host = Uri.parse(req.url).host;
-          // Autoriser : serveur Odoo (baseHost + localhost) + passerelle CMI
-          if (host == baseHost ||
-              host == 'localhost' ||
-              _allowedHosts.any((h) => host.endsWith(h))) {
-            return NavigationDecision.navigate;
-          }
-          return NavigationDecision.prevent;
-        },
+        // Autoriser toute navigation pendant le paiement (3D Secure inclus)
       ));
 
     // Autoriser mixed content HTTPS→HTTP (okUrl/failUrl CMI en dev HTTP)
@@ -282,12 +267,20 @@ class _PaymentWebScreenState extends State<_PaymentWebScreen> {
   }
 
   void _handleReturn(String url) {
-    if (url.contains('/payment/status') ||
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    // Succès
+    if (url.contains('/payment/cmi/return') ||
+        url.contains('/payment/status') ||
         url.contains('/shop/confirmation') ||
-        url.contains('/payment/cmi/return')) {
+        (uri.queryParameters['ProcReturnCode'] == '00')) {
       if (mounted) Navigator.of(context).pop(true);
-    } else if (url.contains('/payment/cmi/error') ||
-        url.contains('/payment/cancel')) {
+    }
+    // Échec / annulation
+    else if (url.contains('/payment/cmi/error') ||
+        url.contains('/payment/cancel') ||
+        (uri.queryParameters['ProcReturnCode'] != null &&
+            uri.queryParameters['ProcReturnCode'] != '00')) {
       if (mounted) Navigator.of(context).pop(false);
     }
   }
