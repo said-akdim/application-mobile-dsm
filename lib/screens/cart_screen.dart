@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../config.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import '../state/cart.dart';
 import '../widgets/product_cover.dart';
+import 'login_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -16,7 +17,7 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   bool _sending = false;
-  String _method = 'cod'; // 'cod' = à la livraison, 'online' = en ligne
+  String _method = 'cod';
 
   Future<void> _validate() async {
     final cart = context.read<Cart>();
@@ -24,32 +25,52 @@ class _CartScreenState extends State<CartScreen> {
     if (cart.isEmpty) return;
     setState(() => _sending = true);
     try {
-      final order =
-          await api.createOrder(cart.toOrderLines(), paymentMethod: _method);
+      final order = await api.createOrder(
+        cart.toOrderLines(),
+        paymentMethod: _method,
+      );
 
       if (_method == 'online') {
         final url = await api.getPaymentLink(order.orderId);
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
         cart.clear();
         if (!mounted) return;
-        _showResult('Paiement en ligne',
-            'Commande ${order.name} créée.\nTerminez le paiement dans la page ouverte.');
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => _PaymentWebScreen(
+              url: url,
+              orderName: order.name,
+            ),
+          ),
+        );
       } else {
         cart.clear();
         if (!mounted) return;
-        _showResult('Commande confirmée',
-            'Référence : ${order.name}\nTotal : ${AppFormat.money(order.amountTotal)}\nPaiement à la livraison.');
+        _showResult(
+          'Commande confirmée',
+          'Référence : ${order.name}\nTotal : ${AppFormat.money(order.amountTotal)}\nPaiement à la livraison.',
+        );
       }
     } on ApiException catch (e) {
       if (!mounted) return;
+      if (e.isAuthError) {
+        _redirectToLogin();
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _redirectToLogin() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Session expirée. Veuillez vous reconnecter.')),
+    );
   }
 
   void _showResult(String title, String body) {
@@ -169,6 +190,81 @@ class _CartScreenState extends State<CartScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Écran WebView intégré pour le paiement en ligne (CMI / portail Odoo).
+class _PaymentWebScreen extends StatefulWidget {
+  final String url;
+  final String orderName;
+  const _PaymentWebScreen({required this.url, required this.orderName});
+
+  @override
+  State<_PaymentWebScreen> createState() => _PaymentWebScreenState();
+}
+
+class _PaymentWebScreenState extends State<_PaymentWebScreen> {
+  late final WebViewController _ctrl;
+  bool _loading = true;
+
+  static const _allowedHosts = [
+    'cmi.co.ma',
+    'paiement.cmi.co.ma',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final baseHost = Uri.parse(AppConfig.baseUrl).host;
+    _ctrl = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageStarted: (_) => setState(() => _loading = true),
+        onPageFinished: (url) {
+          setState(() => _loading = false);
+          _handleReturn(url);
+        },
+        onNavigationRequest: (req) {
+          final host = Uri.parse(req.url).host;
+          // Autoriser : serveur Odoo + passerelle CMI
+          if (host == baseHost || _allowedHosts.any((h) => host.endsWith(h))) {
+            return NavigationDecision.navigate;
+          }
+          return NavigationDecision.prevent;
+        },
+      ))
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  void _handleReturn(String url) {
+    if (url.contains('/payment/status') ||
+        url.contains('/shop/confirmation') ||
+        url.contains('/payment/cmi/return')) {
+      if (mounted) Navigator.of(context).pop(true);
+    } else if (url.contains('/payment/cmi/error') ||
+        url.contains('/payment/cancel')) {
+      if (mounted) Navigator.of(context).pop(false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Paiement — ${widget.orderName}'),
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _ctrl),
+          if (_loading)
+            const Center(child: CircularProgressIndicator()),
+        ],
       ),
     );
   }

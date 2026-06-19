@@ -1,6 +1,14 @@
 class AppConfig {
-  static const String baseUrl = 'http://10.0.2.2:8169';
-  static const String dbName = 'agora';
+  // URL du serveur Odoo — en production remplacer par https://votre-domaine.ma
+  static const String baseUrl =
+      String.fromEnvironment('ODOO_URL', defaultValue: 'http://10.0.2.2:8169');
+
+  // Nom de la base de données Odoo
+  static const String dbName =
+      String.fromEnvironment('ODOO_DB', defaultValue: 'agora-dev');
+
+  // Timeout réseau (secondes)
+  static const int networkTimeout = 15;
 }
 
 class AppFormat {

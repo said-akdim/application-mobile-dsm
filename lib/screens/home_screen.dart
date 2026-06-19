@@ -79,11 +79,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // Footer Copyright DSM
           const SizedBox(height: 32),
-          const Center(
+          Center(
             child: Padding(
-              padding: EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                '© Librairie DSM',
+                '© Librairie DSM ${DateTime.now().year}',
                 style: TextStyle(
                   fontSize: 12,
                   color: Color(0xFF6B7280),

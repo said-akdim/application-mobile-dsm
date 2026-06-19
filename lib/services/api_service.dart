@@ -5,7 +5,8 @@ import '../models/models.dart';
 
 class ApiException implements Exception {
   final String message;
-  ApiException(this.message);
+  final bool isAuthError;
+  ApiException(this.message, {this.isAuthError = false});
   @override
   String toString() => message;
 }
@@ -22,7 +23,6 @@ class ApiService {
     return h;
   }
 
-  /// Odoo attend une enveloppe JSON-RPC ; le résultat utile est dans `result`.
   Future<dynamic> _call(String path, Map<String, dynamic> params) async {
     final uri = Uri.parse('${AppConfig.baseUrl}$path');
     final body = jsonEncode({
@@ -33,16 +33,21 @@ class ApiService {
 
     final http.Response res;
     try {
-      res = await http.post(uri, headers: _headers, body: body);
-    } catch (_) {
-      throw ApiException('Impossible de joindre le serveur.');
+      res = await http
+          .post(uri, headers: _headers, body: body)
+          .timeout(const Duration(seconds: AppConfig.networkTimeout));
+    } on Exception {
+      throw ApiException('Impossible de joindre le serveur. Vérifiez votre connexion.');
     }
 
+    if (res.statusCode == 401) {
+      _sessionId = null;
+      throw ApiException('Session expirée. Veuillez vous reconnecter.', isAuthError: true);
+    }
     if (res.statusCode != 200) {
-      throw ApiException('Erreur réseau (${res.statusCode}).');
+      throw ApiException('Erreur réseau. Veuillez réessayer.');
     }
 
-    // Récupère le cookie de session (présent surtout au login).
     final setCookie = res.headers['set-cookie'];
     if (setCookie != null) {
       final m = RegExp(r'session_id=([^;]+)').firstMatch(setCookie);
@@ -52,12 +57,35 @@ class ApiService {
     final decoded = jsonDecode(res.body) as Map<String, dynamic>;
     if (decoded['error'] != null) {
       final err = decoded['error'];
-      final msg = err is Map
-          ? (err['data']?['message'] ?? err['message'] ?? 'Erreur Odoo')
-          : 'Erreur Odoo';
-      throw ApiException(msg.toString());
+      if (err is Map) {
+        final code = err['code'];
+        final data = err['data'];
+        // Session invalide dans Odoo (code 100 ou type session_expired)
+        if (code == 100 ||
+            (data is Map && data['name']?.toString().contains('session') == true)) {
+          _sessionId = null;
+          throw ApiException('Session expirée. Veuillez vous reconnecter.', isAuthError: true);
+        }
+        // Message d'erreur filtré : ne pas exposer les détails internes Odoo
+        final userMsg = _sanitizeError(data);
+        throw ApiException(userMsg);
+      }
+      throw ApiException('Une erreur est survenue. Veuillez réessayer.');
     }
     return decoded['result'];
+  }
+
+  String _sanitizeError(dynamic data) {
+    if (data is! Map) return 'Une erreur est survenue. Veuillez réessayer.';
+    final msg = data['message']?.toString() ?? '';
+    // Messages métier lisibles — on les transmet
+    if (msg.contains('Stock') || msg.contains('stock') ||
+        msg.contains('disponible') || msg.contains('introuvable') ||
+        msg.contains('Identifiants')) {
+      return msg;
+    }
+    // Tout le reste (erreurs techniques Odoo) → message générique
+    return 'Une erreur est survenue. Veuillez réessayer.';
   }
 
   Future<void> login(String login, String password) async {
@@ -72,13 +100,13 @@ class ApiService {
     _userName = (result['name'] ?? result['username'] ?? login).toString();
   }
 
-  void logout() => _sessionId = null;
+  void logout() {
+    _sessionId = null;
+    _userName = null;
+  }
 
-  /// En-têtes pour charger les images protégées d'Odoo (cookie de session).
   Map<String, String> get imageHeaders =>
       _sessionId != null ? {'Cookie': 'session_id=$_sessionId'} : {};
-
-  // --- Parcours scolaire ---
 
   Future<List<City>> getCities() async {
     final data = await _call('/api/cities', {});
@@ -107,8 +135,6 @@ class ApiService {
     return lines.map((e) => Product.fromJson(e)).toList();
   }
 
-  // --- Catalogue (commande classique) ---
-
   Future<List<Product>> getProducts({String? search, int limit = 50}) async {
     final data = await _call('/api/products', {
       'limit': limit,
@@ -117,28 +143,20 @@ class ApiService {
     return (data as List).map((e) => Product.fromJson(e)).toList();
   }
 
-  // --- Commandes ---
-
   Future<OrderSummary> createOrder(
       List<Map<String, dynamic>> lines,
       {String paymentMethod = 'cod', String? note}) async {
+    if (lines.isEmpty) throw ApiException('Le panier est vide.');
     final data = await _call('/api/order/create', {
       'lines': lines,
       'payment_method': paymentMethod,
       if (note != null) 'note': note,
     });
-    if (data is Map && data['error'] != null) {
-      throw ApiException(data['error'].toString());
-    }
     return OrderSummary.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// URL du portail Odoo pour payer la commande en ligne.
   Future<String> getPaymentLink(int orderId) async {
     final data = await _call('/api/order/payment_link', {'order_id': orderId});
-    if (data is Map && data['error'] != null) {
-      throw ApiException(data['error'].toString());
-    }
     return (data as Map)['url'] as String;
   }
 
